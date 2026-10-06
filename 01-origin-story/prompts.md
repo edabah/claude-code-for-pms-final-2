@@ -24,6 +24,12 @@ prompt library built from your own questions.
 
 ### 1.
 
+What data is missing in those files and who should I interview to get more context?
+
 ### 2.
 
+Based on everything you now know about Rook, what should I be worried about that nobody has told me?
+
 ### 3.
+
+If I am trying to debug the issues, where should I look at next?
