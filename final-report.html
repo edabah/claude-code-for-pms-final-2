@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rook Dispatch 4.2 · Final report</title>
+<style>
+:root{--navy:#0e1424;--navy2:#161d33;--navy3:#222b47;--gold:#e3a93c;--paper:#f5f3ee;--ink:#151a2b;--muted:#6a7189;--line:#e4e1d8;--green:#25935f;--orange:#d9561d;--blue:#2f63e0;--red:#c93a3a}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-snap-type:y proximity;scroll-behavior:smooth}
+body{font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--navy);color:#e8ebf5}
+section{min-height:100vh;padding:72px max(24px,calc((100vw - 1060px)/2));scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;position:relative}
+section.light{background:var(--paper);color:var(--ink)}
+section.mid{background:var(--navy2)}
+.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:14px}
+.light .eyebrow{color:#a8741a}
+h1{font-size:clamp(40px,7vw,78px);line-height:1.02;letter-spacing:-.02em;margin-bottom:22px}
+h2{font-size:clamp(28px,4.2vw,46px);line-height:1.1;letter-spacing:-.015em;margin-bottom:18px;max-width:22ch}
+h3{font-size:18px;margin-bottom:6px}
+p.lead{font-size:clamp(18px,2vw,22px);max-width:60ch;color:#c4cbe0}
+.light p.lead{color:#3b4258}
+.gold{color:var(--gold)}
+nav{position:fixed;right:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:9}
+nav a{width:10px;height:10px;border-radius:50%;background:#7b84a3;opacity:.55;display:block}
+nav a:hover{background:var(--gold);opacity:1}
+@media(max-width:700px){nav{display:none}}
+.grid{display:grid;gap:18px;margin-top:28px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.card{background:var(--navy3);border-radius:14px;padding:22px;border:1px solid #2f3a5c}
+.light .card{background:#fff;border-color:var(--line)}
+.stat{font-size:clamp(40px,6vw,64px);font-weight:800;line-height:1;letter-spacing:-.02em}
+.stat small{font-size:.35em;font-weight:600;color:var(--muted);margin-left:4px}
+.label{font-size:13px;color:#9aa5c7;margin-top:8px}
+.light .label{color:var(--muted)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:#2f3a5c;color:var(--gold);margin-bottom:10px}
+.light .tag{background:#f3e6c9;color:#8a5c10}
+.prompt{background:#0a0f1d;border-left:3px solid var(--gold);padding:14px 16px;border-radius:8px;font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#f2dca8;white-space:pre-wrap}
+.light .prompt{background:#1a2036;color:#f2dca8}
+.find{margin-top:12px;font-size:15px;color:#c4cbe0}
+.light .find{color:#3b4258}
+.caveat{font-size:13px;color:#9aa5c7;margin-top:10px;font-style:italic}
+.light .caveat{color:var(--muted)}
+/* bars */
+.bar{height:26px;border-radius:6px;margin:6px 0;display:flex;align-items:center;padding-left:10px;font-size:13px;font-weight:700;color:#fff;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.in .bar{width:var(--w)}
+.bar.a{background:var(--blue)}.bar.b{background:var(--orange)}.bar.g{background:var(--green)}.bar.s{background:#667088}
+/* timeline */
+.tl{display:flex;gap:0;margin-top:30px;overflow-x:auto;padding-bottom:6px}
+.tl div{flex:1;min-width:150px;border-top:3px solid var(--gold);padding:12px 12px 0 0;font-size:14px;color:#c4cbe0}
+.tl b{display:block;color:#fff;font-size:15px}
+.tl .bad{border-color:var(--orange)}
+/* spiral */
+.loop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:26px}
+.node{background:var(--navy3);border:1px solid #3a4770;border-radius:12px;padding:12px 14px;font-size:14px;max-width:190px}
+.node.hot{border-color:var(--orange);background:#2b1a1a}
+.arrow{color:var(--gold);font-size:22px}
+/* meter */
+.meter{display:flex;gap:4px;margin-top:14px;align-items:flex-end;height:90px}
+.meter i{flex:1;background:var(--gold);border-radius:3px 3px 0 0;transform-origin:bottom;transform:scaleY(0);transition:transform .6s ease}
+.in .meter i{transform:scaleY(1)}
+/* proto */
+.frame{border:1px solid #2f3a5c;border-radius:14px;overflow:hidden;background:#fff;margin-top:22px}
+.frame iframe{width:100%;height:640px;border:0;display:block}
+.tabs{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.tabs button{background:var(--navy3);color:#e8ebf5;border:1px solid #3a4770;border-radius:99px;padding:8px 16px;font:inherit;font-size:14px;cursor:pointer}
+.tabs button.on{background:var(--gold);color:var(--navy);border-color:var(--gold);font-weight:700}
+.step{display:none}.step.on{display:block}
+/* checklist */
+.chk{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+.chk span.ic{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;color:#fff;background:var(--green)}
+.chk span.no{background:var(--red)}
+a{color:var(--gold)}.light a{color:#8a5c10}
+footer{padding:40px 24px;text-align:center;font-size:13px;color:#7b84a3;background:var(--navy)}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.bar,.meter i{transition:none}}
+</style>
+</head>
+<body>
+<nav aria-label="Sections"><a href="#top"></a><a href="#what"></a><a href="#m1"></a><a href="#m2"></a><a href="#m3"></a><a href="#m4"></a><a href="#cause"></a><a href="#fix"></a><a href="#skill"></a><a href="#next"></a></nav>
+
+<section id="top">
+  <div class="eyebrow">Rook Industries · Dispatch · Final report</div>
+  <h1>What happened with <span class="gold">release 4.2</span></h1>
+  <p class="lead">A change people asked for. A number that went down. Four responders who quietly stopped hearing from us. Six weeks of working out why, what we'd build instead, and how to stop it repeating.</p>
+  <p class="caveat">Rook Industries is a fictional course scenario (Product School, cohort ccpm-2026.1). Data covers 29 Jun – 6 Sep 2026 only; all figures are from the course files.</p>
+</section>
+
+<section id="what" class="mid">
+  <div class="eyebrow">The short version</div>
+  <h2>4.2 changed two things at once. For some responders, the pings simply stopped.</h2>
+  <div class="tl">
+    <div><b>16 Jun · 4.1</b>Travel-time proximity</div>
+    <div class="bad"><b>12 Aug · 4.2</b>Proximity weight up, recent-acceptance down, ping wait 90s → 60s</div>
+    <div class="bad"><b>14–24 Aug</b>Wen Li away. Priya leaves 21 Aug. Nobody owns the fallout</div>
+    <div class="bad"><b>2–5 Sep</b>Four handler interviews</div>
+    <div><b>6 Oct</b>Now: root cause traced, fix designed</div>
+  </div>
+  <div class="grid g3" id="stats">
+    <div class="card"><div class="stat">25 → 110<small>/wk</small></div><div class="label">Missed pings per week, before vs after 12 Aug (2.3% → 18% of pings)</div></div>
+    <div class="card"><div class="stat">4 of 16</div><div class="label">Responders who collapsed: ~28% of pings taken before, ~1% after</div></div>
+    <div class="card"><div class="stat">0</div><div class="label">Routing complaints before 12 Aug. All 45 later "quiet"/"moved on" tickets are still open</div></div>
+  </div>
+  <p class="caveat">Priya's "mostly seasonal, back in September" fits call volume only. I have no September data to prove or disprove it.</p>
+</section>
+
+<!-- MODULE 1 -->
+<section id="m1" class="light">
+  <div class="eyebrow">Module 1 · Origin Story</div>
+  <h2>Finding: I couldn't trust any number yet. I knew exactly what was missing.</h2>
+  <div class="grid g2">
+    <div class="card">
+      <div class="tag">Prompt I wrote</div>
+      <div class="prompt">What data is missing in those files and who should I interview to get more context?</div>
+      <p class="find">Result: the database runs 29 Jun – 6 Sep only: no prior-year baseline, no response times, no ranking scores, no availability data. It also produced my interview order: Wen Li, Ravi, Helen, Nadia, Marcus, Sofia, a handler, a responder, the Supply owner, Priya via Helen.</p>
+    </div>
+    <div class="card">
+      <div class="tag">Why it mattered</div>
+      <h3>"Seasonal" couldn't be tested</h3>
+      <p class="find">With no baseline, Priya's seasonality theory was a hypothesis, not a finding. Naming the gaps up front kept me from asserting numbers I hadn't pulled.</p>
+    </div>
+  </div>
+</section>
+
+<!-- MODULE 2 -->
+<section id="m2" class="mid">
+  <div class="eyebrow">Module 2 · Super Hearing</div>
+  <h2>Finding: "pings moved on before I could answer". Nobody said that before 12 Aug.</h2>
+  <div class="grid g2">
+    <div class="card">
+      <div class="tag">Prompt I wrote</div>
+      <div class="prompt">Only look at what came in after 12 August. What's different about these compared to everything before?</div>
+      <p class="find">Result: a brand-new theme. 147 tickets from 12 filers (mostly duplicate wording); 45 "quiet" and "moved on" tickets, all still open. The interviews and tickets covered almost different handlers, so neither alone gave the size.</p>
+    </div>
+    <div class="card" id="m2c">
+      <div class="tag">What the two piles said</div>
+      <div class="label" style="margin-top:0">Missed pings, weekly rate</div>
+      <div class="bar s" style="--w:12%">Before 25</div>
+      <div class="bar b" style="--w:55%">After 110</div>
+      <div class="label">Pings per callout 1.23 → 1.39 · callouts with nobody taking 5.5% → 11%</div>
+      <p class="caveat">Vesper and Meteor Mite never filed tickets, so tickets undercount.</p>
+    </div>
+  </div>
+  <p class="find" style="margin-top:20px">Also from this module: the prompt <em>"If both piles are telling the truth, how can they both be right?"</em> is what exposed that interviews and tickets sampled different handlers.</p>
+</section>
+
+<!-- MODULE 3 -->
+<section id="m3" class="light">
+  <div class="eyebrow">Module 3 · Rewind</div>
+  <h2>Finding: the headline −8.3 pts hides a −63.9 pt collapse in four people.</h2>
+  <div class="grid g2">
+    <div class="card" id="m3c">
+      <div class="tag">Acceptance rate, before → after</div>
+      <div class="label" style="margin-top:0">Everyone (6 wks before vs 3 full wks from 17 Aug)</div>
+      <div class="bar a" style="--w:76.8%">76.8%</div>
+      <div class="bar a" style="--w:68.5%;background:#6c8be8">68.5%  (−8.3 pts)</div>
+      <div class="label" style="margin-top:14px">Farlight, Meteor Mite, The Undertow, Vesper</div>
+      <div class="bar a" style="--w:75.9%">75.9%</div>
+      <div class="bar b" style="--w:12%;min-width:60px">12.0%</div>
+      <div class="label">Pings sent 49 → 8 a week, still falling at 31 Aug. The other ten took ~25% more.</div>
+      <p class="caveat">I picked those four <em>because</em> they collapsed, and they had only 25 pings after, so I don't quote −63.9 pts alone.</p>
+    </div>
+    <div class="card">
+      <div class="tag">Prompt I wrote</div>
+      <div class="prompt">wait... we're not aggregating right
+Ping sent
+Change in sent
+Acceptance Rate (can show the raw number)
+Change in Acceptance Rate (not the change in raw accepted)
+Not accepted rate (Can also show raw numbers)
+Change in not accepted rate (not in the raw number)
+
+Refresh chart</div>
+      <p class="find">This correction is the one that fixed the table: rates, not raw counts. It's why the numbers above can be defended.</p>
+    </div>
+  </div>
+</section>
+
+<!-- MODULE 4 -->
+<section id="m4" class="mid">
+  <div class="eyebrow">Module 4 · X-Ray Vision</div>
+  <h2>Finding: "recent acceptance" isn't a rate. It's a meter that only rises when you accept.</h2>
+  <div class="grid g2">
+    <div class="card" id="m4c">
+      <div class="tag">Prompt I wrote</div>
+      <div class="prompt">Find me the part of this code that takes points off somebody when they miss a ping or turn one down. Show it to me and explain it in plain English. Then find me every single thing in this code that puts points back on.</div>
+      <p class="find">Result (history.py, offer.py): starts at 0.5. +0.08 per taken ping, −0.12 per turned-down <em>or missed</em> ping, clamped 0–1. Only <code>record_accepted</code> adds points. Nothing decays. An unsigned 2019 TODO about it was never decided.</p>
+    </div>
+    <div class="card">
+      <div class="tag">What it means</div>
+      <div class="stat">~60%<small>break-even</small></div>
+      <div class="label">Accept less than ~60% of pings and the meter only goes down.</div>
+      <div class="meter" aria-hidden="true"><i style="height:100%"></i><i style="height:82%"></i><i style="height:64%"></i><i style="height:48%"></i><i style="height:36%"></i><i style="height:26%"></i><i style="height:18%"></i><i style="height:12%"></i></div>
+      <div class="label">Illustrative drift with repeated misses. No recovery path unless pinged again.</div>
+    </div>
+  </div>
+  <p class="find" style="margin-top:18px">4.2 weights: proximity 0.45 → 0.60, recent acceptance 0.40 → 0.25, capability 0.15 unchanged. Ping wait 90 → 60s.</p>
+</section>
+
+<!-- CAUSE -->
+<section id="cause" class="light">
+  <div class="eyebrow">Plainly: what happened</div>
+  <h2>A responder who goes quiet has no way back.</h2>
+  <p class="lead">Leading hypothesis, not yet confirmed with Wen Li or September data.</p>
+  <div class="loop">
+    <div class="node">Ping wait cut to <b>60s</b></div><span class="arrow">→</span>
+    <div class="node hot">Slower answerers <b>miss</b> pings</div><span class="arrow">→</span>
+    <div class="node hot">Miss counts as a turn-down: <b>−0.12</b></div><span class="arrow">→</span>
+    <div class="node hot">Rank falls, <b>fewer pings</b></div><span class="arrow">→</span>
+    <div class="node hot">No pings = no way to earn points. <b>Stuck.</b></div>
+  </div>
+  <div class="grid g3">
+    <div class="card"><h3>What the data supports</h3><p class="find">Responders who kept 7+ pings a week after the dip recovered; the four who fell below ~4 never did. They were ordinary before 4.2 (69–82% acceptance), so not prior decliners.</p></div>
+    <div class="card"><h3>Where the story is weaker</h3><p class="find">With the meter weighted less, a miss costs <em>less</em> rank than before. Proximity (are the four peripheral?) is a live alternative; I haven't run that query. "Slower responders" is an inference: I have no response times.</p></div>
+    <div class="card"><h3>Still to ask</h3><p class="find">Wen Li: decay speed, whether the 12 Aug deploy reset in-memory scores. Marcus: his unanswered 14 Aug question. Ravi: where the four sit, and the midnight–6am drop.</p></div>
+  </div>
+</section>
+
+<!-- FIX -->
+<section id="fix" class="mid">
+  <div class="eyebrow">Module 5 · Super Speed · The fix</div>
+  <h2>Quiet-responder recovery</h2>
+  <p class="lead">Helen asked what we'd build instead of quietly changing a number, seen from the people it happens to. Two screens: Kip's console, and Meteor Mite's phone.</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="tag">Prompt I wrote</div>
+      <div class="prompt">I lost you in the middle. It got way too technical and switched to bullets. Let's tell this as a story. We can use the data points as needed, but let this brief better tell the story. Give this another shot</div>
+      <p class="find">Produced the story-form brief: Summary, Problem, Solution, How we'll know, Risks. Saved at <a href="05-super-speed/brief.md">05-super-speed/brief.md</a>.</p>
+    </div>
+    <div class="card">
+      <div class="tag">Prompt I wrote</div>
+      <div class="prompt">This prototype is very weak.... colors are weak... can show more of Rook's branding (even though not designed)
+
+We can show more of the "Handler Console" that we are logged in as...
+[...]
+For the responder screen, make it look more like an iphone...</div>
+      <p class="find">Produced the two-screen prototype below: handler and responder kept apart so nobody confuses whose screen it is.</p>
+    </div>
+  </div>
+  <div class="grid g3">
+    <div class="card"><h3>1 · Not-real misses</h3><p class="find">A handler can mark misses as not real, which restores rank.</p></div>
+    <div class="card"><h3>2 · Ease back in</h3><p class="find">Reset to neutral, offer a few pings at a time. Any answer, even a turn-down, counts. Silent repeats pause and ask "still away?"</p></div>
+    <div class="card"><h3>3 · Plain status</h3><p class="find">Handlers and responders both see in words why pings are or aren't coming.</p></div>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="on" onclick="pick(this,'ph')">Clickable prototype</button>
+    <button onclick="pick(this,'nt')">What it deliberately doesn't do</button>
+  </div>
+  <div class="step on" id="ph">
+    <div class="frame"><iframe src="05-super-speed/prototype.html" title="Rook Dispatch quiet-responder recovery prototype" loading="lazy"></iframe></div>
+    <p class="caveat">If the frame is blank, open <a href="05-super-speed/prototype.html">the prototype</a> directly. All numbers, dates and tags in it are illustrative.</p>
+  </div>
+  <div class="step" id="nt">
+    <div class="grid g2">
+      <div class="card"><h3>Does not</h3><p class="find">Revert 4.2 · change proximity weights · change ping wait · ping anyone marked away · identify anyone behind a cover.</p></div>
+      <div class="card"><h3>Placeholders, not decisions</h3><p class="find">N=3 probe pings, K=3 silent offers, and the four ramp steps are mine. Helen hasn't decided whether "those misses weren't real" is in v1. Risk: someone marked available but unreachable costs a full ping wait.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- SKILL -->
+<section id="skill" class="light">
+  <div class="eyebrow">Module 6 · Sidekicks · Prevention</div>
+  <h2>A checklist skill that reads every brief before it ships.</h2>
+  <p class="lead">It runs on a schedule, checks the briefs in <code>06-sidekicks/briefs/</code> against four questions, and flags what's missing.</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="tag">review-checklist · sample run output</div>
+      <div class="chk"><span class="ic">?</span><div><b>Owner named</b><br>Is someone accountable for it?</div></div>
+      <div class="chk"><span class="ic">?</span><div><b>Success measure</b><br>How would anyone know it's working?</div></div>
+      <div class="chk"><span class="ic">?</span><div><b>Scope stays bounded</b><br>No quiet growth mid-document</div></div>
+      <div class="chk"><span class="ic">?</span><div><b>Problem before fix</b><br>The problem comes first</div></div>
+    </div>
+    <div class="card">
+      <div class="tag">Its first run: 4 briefs, 4 flagged</div>
+      <div class="chk"><span class="ic no">✕</span><div><b>bulk-callout</b>: no owner. "Nobody's picked it up yet."</div></div>
+      <div class="chk"><span class="ic no">✕</span><div><b>routing-override-audit-log</b>: no success measure</div></div>
+      <div class="chk"><span class="ic no">✕</span><div><b>requisition-approval-chains</b>: scope grows past "the whole ask"</div></div>
+      <div class="chk"><span class="ic no">✕</span><div><b>handler-phone-app</b>: solution before problem</div></div>
+    </div>
+  </div>
+  <div class="grid g3">
+    <div class="card"><h3>Why it maps to 4.2</h3><p class="find">4.2 shipped two changes together with no stated way to see one responder's pings go to zero. A success-measure and owner check pushes that question to the surface <em>before</em> release. Wen Li's absence and Priya's exit left the change with no owner when it landed.</p></div>
+    <div class="card"><h3>What it can't catch</h3><p class="find">It reads briefs, not code. It wouldn't have spotted the meter or the 60s timeout on its own. It enforces the question, not the answer.</p></div>
+    <div class="card"><h3>Gaps I should be honest about</h3><p class="find">Module 6's prompts.md is empty: I haven't written prompts for this session yet. The skill's own SKILL.md isn't in this repo, so I described it from the run output only.</p></div>
+  </div>
+</section>
+
+<section id="next" class="mid">
+  <div class="eyebrow">What I'd do next</div>
+  <h2>Three conversations, then a decision.</h2>
+  <div class="grid g3">
+    <div class="card"><div class="tag">Helen</div><p class="find">Which squeezed 4.2 items are still Q3 commitments, and whether "misses weren't real" is in v1.</p></div>
+    <div class="card"><div class="tag">Wen Li + Marcus</div><p class="find">Decay speed, score reset on deploy, probe-ping placement; Marcus's 14 Aug question. Anything in config.py is flagged to Marcus first.</p></div>
+    <div class="card"><div class="tag">Ravi</div><p class="find">Where the four sit, the midnight–6am drop, September data, and miss vs turn-down logged separately so any fix can be measured.</p></div>
+  </div>
+</section>
+<footer>Rook Industries is fictional. Source: CLAUDE.md working context and prompts.md for Modules 1–6.</footer>
+
+<script>
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting)e.target.classList.add('in')})},{threshold:.25});
+document.querySelectorAll('section').forEach(function(s){io.observe(s)});
+function pick(b,id){b.parentNode.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});b.classList.add('on');['ph','nt'].forEach(function(i){document.getElementById(i).classList.toggle('on',i===id)})}
+</script>
+</body>
+</html>
