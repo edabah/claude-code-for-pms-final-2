@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rook Dispatch · Quiet-responder recovery prototype</title>
+<style>
+  :root {
+    --navy:#0e1424; --navy-2:#161d33; --navy-3:#222b47; --gold:#e3a93c; --gold-d:#b98521;
+    --paper:#f5f3ee; --card:#ffffff; --ink:#151a2b; --muted:#6a7189; --line:#e4e1d8;
+    --green:#25935f; --green-bg:#e3f4ea; --orange:#d9561d; --orange-bg:#fdebe2;
+    --blue:#2f63e0; --blue-bg:#e5edfd; --slate:#667088; --slate-bg:#e9ebf1;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif; background:#cfd3de; color:var(--ink); min-height:100vh; }
+  button { font:inherit; cursor:pointer; }
+  button:disabled { cursor:not-allowed; }
+  :focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+  .hidden { display:none !important; }
+
+  /* ---------- prototype bar (not part of Rook) ---------- */
+  .proto { background:#11131a; color:#d9dce6; padding:10px 16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:50; }
+  .proto .t { font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:#9aa0b3; }
+  .seg { display:flex; background:#232733; border-radius:10px; padding:3px; gap:3px; }
+  .seg button { background:none; border:0; color:#aeb4c6; padding:8px 14px; border-radius:8px; font-weight:600; position:relative; }
+  .seg button.on { background:#f3efe4; color:#11131a; }
+  .seg .dot { position:absolute; top:4px; right:5px; min-width:16px; height:16px; border-radius:99px; background:#e5484d; color:#fff; font-size:11px; line-height:16px; text-align:center; padding:0 4px; }
+  .proto .reset { background:none; border:1px solid #3a3f52; color:#c7ccdb; border-radius:8px; padding:7px 12px; }
+  .stage { padding:22px 16px 40px; max-width:1240px; margin:0 auto; }
+  .caption { text-align:center; margin:0 auto 14px; color:#394057; font-size:13px; max-width:720px; }
+  .caption b { color:#0e1424; }
+
+  /* ---------- handler console ---------- */
+  .window { position:relative; background:var(--paper); border-radius:12px; overflow:hidden; box-shadow:0 18px 50px rgba(14,20,36,.30); border:1px solid #aab0c2; }
+  .chrome { background:#e4e6ee; padding:9px 14px; display:flex; align-items:center; gap:10px; border-bottom:1px solid #c9ccd8; }
+  .chrome i { width:11px; height:11px; border-radius:50%; background:#bcc0cd; display:inline-block; }
+  .chrome .url { margin-left:10px; background:#f6f7fb; border-radius:6px; padding:3px 14px; font-size:12px; color:#6a7189; flex:1; max-width:420px; }
+  .app { display:grid; grid-template-columns:210px 1fr; min-height:660px; }
+  .side { background:linear-gradient(180deg,var(--navy),var(--navy-2)); color:#c7cde0; padding:18px 12px; }
+  .logo { display:flex; align-items:center; gap:10px; padding:2px 8px 18px; color:#fff; font-weight:700; font-size:16px; letter-spacing:.3px; }
+  .logo svg { width:28px; height:28px; fill:var(--gold); }
+  .logo small { display:block; font-weight:500; color:#8f98b5; font-size:11px; letter-spacing:.6px; text-transform:uppercase; }
+  .nav a { display:flex; gap:10px; align-items:center; padding:9px 10px; border-radius:8px; color:#aeb6cf; text-decoration:none; margin-bottom:2px; cursor:default; }
+  .nav a.on { background:var(--navy-3); color:#fff; box-shadow:inset 3px 0 0 var(--gold); }
+  .nav a span.ic { width:18px; text-align:center; opacity:.8; }
+  .side .foot { margin-top:24px; padding:12px 10px; border-top:1px solid #2a3350; font-size:12px; color:#8f98b5; }
+  .side .foot b { color:#e8ebf7; display:block; font-size:13px; }
+  .main { padding:22px 26px 28px; min-width:0; }
+  .topline { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .topline h1 { margin:0; font-size:22px; }
+  .topline p { margin:3px 0 0; color:var(--muted); }
+  .me { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); }
+  .avatar { width:34px; height:34px; border-radius:50%; background:var(--navy); color:var(--gold); display:grid; place-items:center; font-weight:700; }
+  .tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .tile b { font-size:22px; display:block; }
+  .tile span { color:var(--muted); font-size:12px; }
+  .tile.attn { border-color:#f0b9a0; background:#fff8f4; }
+  .grid { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:16px; align-items:start; }
+  @media (max-width:1000px){ .grid{grid-template-columns:1fr;} .app{grid-template-columns:1fr;} .side{display:none;} }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  .panel h3 { margin:0; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); padding:12px 16px 8px; display:flex; justify-content:space-between; align-items:center; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); padding:6px 16px; font-weight:600; }
+  td { padding:12px 16px; border-top:1px solid var(--line); vertical-align:middle; }
+  tr.row { cursor:pointer; }
+  tr.row:hover td { background:#faf8f3; }
+  tr.row.sel td { background:#fbf4e3; }
+  tr.row.sel td:first-child { box-shadow:inset 3px 0 0 var(--gold); }
+  .nm { font-weight:700; }
+  .nm small { display:block; color:var(--muted); font-weight:400; }
+  .rbar { width:90px; height:7px; background:var(--line); border-radius:99px; overflow:hidden; }
+  .rbar i { display:block; height:100%; background:var(--navy); transition:width .5s; }
+  .badge { display:inline-flex; align-items:center; gap:6px; font-weight:700; font-size:12px; padding:3px 10px; border-radius:99px; position:relative; white-space:nowrap; }
+  .badge::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .b-active { color:var(--green); background:var(--green-bg); }
+  .b-quiet { color:var(--orange); background:var(--orange-bg); }
+  .b-easing { color:var(--blue); background:var(--blue-bg); }
+  .b-away { color:var(--slate); background:var(--slate-bg); }
+  .tip { position:relative; }
+  .tip::after { content:attr(data-tip); position:absolute; left:0; top:calc(100% + 6px); width:250px; background:var(--navy); color:#eef0f7; font-size:12px; font-weight:400; line-height:1.4; padding:9px 11px; border-radius:8px; opacity:0; pointer-events:none; transition:opacity .12s; z-index:20; white-space:normal; box-shadow:0 8px 20px rgba(0,0,0,.25); }
+  .tip:hover::after, .tip:focus::after { opacity:1; }
+  .legend { padding:0 16px 14px; }
+  .legend dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:8px 12px; align-items:start; }
+  .legend dt { padding-top:1px; }
+  .legend dd { margin:0; color:#3b425a; font-size:13px; }
+  .detail { padding:16px; }
+  .detail .hd { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .detail h2 { margin:0; font-size:19px; }
+  .detail .tags { color:var(--muted); font-size:12px; margin-top:2px; }
+  .why { background:var(--paper); border-radius:10px; padding:12px; margin:12px 0; font-size:13.5px; }
+  .why.o { background:var(--orange-bg); } .why.b { background:var(--blue-bg); } .why.g { background:var(--green-bg); } .why.s { background:var(--slate-bg); }
+  .why b { display:block; margin-bottom:2px; }
+  .alert { background:#fff3d6; border:1px solid #efc766; border-radius:10px; padding:12px; margin:12px 0; }
+  .alert b { display:block; }
+  .steps { display:flex; gap:6px; margin:10px 0 2px; }
+  .steps i { flex:1; height:9px; border-radius:99px; background:var(--line); }
+  .steps i.done { background:var(--green); }
+  .steps i.now { background:var(--blue); }
+  .meta { color:var(--muted); font-size:12px; }
+  .cmds { margin-top:14px; }
+  .cmds h4 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .cmd { display:grid; grid-template-columns:150px 1fr; gap:12px; padding:10px 0; border-top:1px solid var(--line); align-items:start; }
+  .cmd p { margin:0; font-size:13px; color:#3b425a; }
+  .cmd p em { display:block; font-style:normal; color:var(--muted); font-size:12px; margin-top:2px; }
+  .btn { border:1px solid #cfcab9; background:#fff; color:var(--ink); border-radius:8px; padding:8px 10px; font-weight:600; width:100%; }
+  .btn:hover:not(:disabled) { border-color:var(--gold-d); }
+  .btn.pri { background:var(--gold); border-color:var(--gold-d); color:#1a1405; }
+  .btn.pri:hover:not(:disabled) { background:#efb74f; }
+  .btn:disabled { opacity:.45; background:#f1efe8; }
+  .btn.sm { width:auto; padding:7px 12px; }
+  .log { margin:0; padding:0; list-style:none; font-size:12.5px; }
+  .log li { padding:6px 0; border-top:1px solid var(--line); color:#3b425a; display:flex; gap:8px; }
+  .log li time { color:var(--muted); min-width:44px; }
+  .overlay { position:absolute; inset:0; background:rgba(14,20,36,.55); display:grid; place-items:center; z-index:30; padding:16px; }
+  .modal { background:#fff; border-radius:14px; max-width:480px; width:100%; padding:20px; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+  .modal h3 { margin:0 0 6px; font-size:18px; }
+  .modal p { margin:0 0 10px; color:#3b425a; }
+  .modal ul { list-style:none; margin:10px 0 14px; padding:0; }
+  .modal li { padding:9px 0; border-top:1px solid var(--line); }
+  .modal li label { display:flex; gap:10px; align-items:center; cursor:pointer; }
+  .modal .row { display:flex; gap:8px; justify-content:flex-end; }
+  .toast { background:var(--navy); color:#fff; border-radius:10px; padding:10px 14px; margin-bottom:14px; display:flex; justify-content:space-between; gap:12px; align-items:center; }
+  .toast button { background:none; border:0; color:var(--gold); font-weight:700; }
+
+  /* ---------- responder phone view ---------- */
+  .phoneview { display:grid; grid-template-columns:minmax(280px,380px) auto; gap:36px; justify-content:center; align-items:start; padding:6px 0; }
+  @media (max-width:820px){ .phoneview{ grid-template-columns:1fr; justify-items:center; } }
+  .ctl { background:#fff; border-radius:14px; padding:18px; box-shadow:0 8px 24px rgba(14,20,36,.12); }
+  .ctl h2 { margin:0 0 6px; font-size:18px; }
+  .ctl p { margin:0 0 12px; color:#3b425a; }
+  .ctl .grp { border-top:1px solid var(--line); padding-top:12px; margin-top:12px; }
+  .ctl .grp h4 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .ctl .btn { margin-bottom:8px; }
+  .ctl .hint { font-size:12.5px; color:var(--muted); }
+  .iphone { width:320px; height:660px; background:#0b0b0e; border-radius:54px; padding:11px; box-shadow:0 0 0 2px #3a3d48, 0 24px 60px rgba(0,0,0,.45); position:relative; }
+  .screen { position:relative; width:100%; height:100%; border-radius:44px; overflow:hidden; background:#f2f2f7; display:flex; flex-direction:column; }
+  .island { position:absolute; top:10px; left:50%; transform:translateX(-50%); width:94px; height:27px; background:#000; border-radius:20px; z-index:10; }
+  .sbar { display:flex; justify-content:space-between; padding:14px 26px 0; font-size:13px; font-weight:700; height:44px; position:relative; z-index:5; }
+  .sbar .r { letter-spacing:1px; }
+  .homebar { position:absolute; bottom:7px; left:50%; transform:translateX(-50%); width:118px; height:5px; border-radius:99px; background:#0e1424; opacity:.85; z-index:9; }
+  .lock { background:linear-gradient(170deg,#1c2850 0%,#0e1424 55%,#2a1a14 100%); color:#fff; }
+  .lock .sbar { color:#fff; }
+  .lock .homebar { background:#fff; }
+  .lock .clock { text-align:center; margin-top:34px; }
+  .lock .clock .d { font-size:15px; opacity:.85; }
+  .lock .clock .t { font-size:76px; font-weight:300; line-height:1; letter-spacing:-2px; }
+  .notifs { padding:22px 12px; display:flex; flex-direction:column; gap:8px; overflow:auto; }
+  .notif { background:rgba(255,255,255,.88); color:#111; border-radius:18px; padding:10px 12px; display:grid; grid-template-columns:34px 1fr auto; gap:10px; cursor:pointer; text-align:left; border:0; width:100%; backdrop-filter:blur(8px); }
+  .notif .ico { width:34px; height:34px; border-radius:8px; background:var(--navy); display:grid; place-items:center; }
+  .notif .ico svg { width:20px; height:20px; fill:var(--gold); }
+  .notif b { display:block; font-size:13.5px; }
+  .notif span { font-size:12.5px; color:#333; display:block; line-height:1.3; }
+  .notif time { font-size:11px; color:#666; }
+  .notif.ping { box-shadow:0 0 0 2px var(--gold); }
+  .nonotif { text-align:center; opacity:.65; font-size:13px; margin-top:30px; }
+  .hint-lock { position:absolute; bottom:26px; left:0; right:0; text-align:center; color:#fff; opacity:.6; font-size:12px; }
+  .apphd { background:var(--navy); color:#fff; padding:6px 18px 14px; margin-top:-44px; padding-top:50px; }
+  .apphd .logo { padding:0; font-size:17px; }
+  .apphd .logo svg { width:24px; height:24px; }
+  .apphd .av { display:flex; justify-content:space-between; align-items:center; }
+  .apphd .av small { color:#9aa5c7; }
+  .appbody { padding:14px; overflow:auto; flex:1; padding-bottom:40px; }
+  .avail { display:flex; justify-content:space-between; align-items:center; background:#fff; border-radius:14px; padding:12px 14px; margin-bottom:12px; }
+  .sw { width:44px; height:26px; border-radius:99px; background:var(--green); position:relative; }
+  .sw::after { content:""; position:absolute; right:3px; top:3px; width:20px; height:20px; border-radius:50%; background:#fff; }
+  .sw.off { background:#c9ccd6; } .sw.off::after { right:auto; left:3px; }
+  .scard { border-radius:16px; padding:14px; margin-bottom:12px; }
+  .scard b { display:block; font-size:15px; margin-bottom:3px; }
+  .scard p { margin:0; font-size:13px; color:#33394d; }
+  .scard.o { background:var(--orange-bg); } .scard.b { background:var(--blue-bg); } .scard.g { background:var(--green-bg); } .scard.s { background:var(--slate-bg); }
+  .pbanner { background:var(--navy); color:#fff; border-radius:12px; padding:10px 12px; margin-bottom:12px; font-size:13px; }
+  .list { background:#fff; border-radius:14px; }
+  .list div { padding:11px 14px; border-top:1px solid #eee; font-size:13px; display:flex; justify-content:space-between; }
+  .list div:first-child { border-top:0; }
+  .list small { color:#8a90a3; }
+  .ping-s { background:var(--navy); color:#fff; }
+  .ping-s .sbar { color:#fff; }
+  .ping-s .homebar { background:#fff; }
+  .ping-body { padding:18px 20px; flex:1; display:flex; flex-direction:column; }
+  .ping-body .k { color:var(--gold); font-weight:700; letter-spacing:.8px; font-size:12px; text-transform:uppercase; }
+  .ping-body h2 { margin:6px 0 4px; font-size:25px; }
+  .ping-body .facts { margin:12px 0; display:grid; gap:8px; }
+  .ping-body .fact { background:var(--navy-3); border-radius:12px; padding:10px 12px; font-size:13.5px; display:flex; justify-content:space-between; }
+  .ring { margin:10px auto; width:110px; height:110px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--gold) var(--deg,360deg), #2a3354 0); }
+  .ring div { width:90px; height:90px; border-radius:50%; background:var(--navy); display:grid; place-items:center; font-size:30px; font-weight:700; }
+  .ring-l { text-align:center; font-size:12px; color:#9aa5c7; margin-bottom:8px; }
+  .pbtns { margin-top:auto; padding-bottom:20px; display:grid; gap:10px; }
+  .pbtns button { border:0; border-radius:16px; padding:16px; font-size:17px; font-weight:700; }
+  .take { background:var(--gold); color:#1a1405; }
+  .pass { background:transparent; color:#dfe3f1; border:1px solid #3a4467 !important; }
+  .note { font-size:12px; color:#9aa5c7; text-align:center; margin-top:2px; }
+  .legend-foot { max-width:900px; margin:18px auto 0; color:#394057; font-size:12.5px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="proto" role="toolbar" aria-label="Prototype controls">
+  <div><span class="t">Prototype · not the product</span><div style="font-size:13px;color:#fff">Quiet-responder recovery · two screens, one story</div></div>
+  <div class="seg" role="tablist">
+    <button role="tab" id="tabConsole" class="on" data-view="console">① Handler console <span style="opacity:.6;font-weight:400">· Kip, laptop</span></button>
+    <button role="tab" id="tabPhone" data-view="phone">② Responder phone <span style="opacity:.6;font-weight:400">· Meteor Mite, iPhone</span><span class="dot hidden" id="dot">0</span></button>
+  </div>
+  <button class="reset" id="reset">↺ Reset prototype</button>
+</div>
+
+<div class="stage">
+  <p class="caption" id="caption"></p>
+  <div id="view"></div>
+  <p class="legend-foot">Illustrative data. The ramp (four steps, "still away?" after three unanswered offers) is a placeholder to be set with Wen Li. Nothing here runs real routing. In this prototype each answered offer advances one step.</p>
+</div>
+
+<script>
+(function () {
+  var ROOK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21h16v-2.2l-2-1.3V11l2-1.4V3h-3.4v2.3h-2.2V3H9.6v2.3H7.4V3H4v6.6L6 11v6.5l-2 1.3z"/></svg>';
+  var MISSES = [
+    { id:1, label:"Mon 17 Aug · 02:10" }, { id:2, label:"Tue 18 Aug · 23:40" },
+    { id:3, label:"Thu 20 Aug · 03:05" }, { id:4, label:"Sat 22 Aug · 01:30" }
+  ];
+  var STEPS = 4, MAX_SILENT = 3, CAPS = [3,5,8,12];
+  var STATUS = {
+    active: { cls:"b-active", name:"Active", tip:"Marked available and being offered work normally, ranked by distance, skills and recent answers." },
+    quiet:  { cls:"b-quiet", name:"Gone quiet", tip:"Marked available, but pings have dropped far below her usual because her ranking is low. She can't earn it back without being offered work." },
+    easing: { cls:"b-easing", name:"Easing back in", tip:"A gradual return: ranking reset to neutral, a few offers at a time. Any answer, even no, moves her forward." },
+    away:   { cls:"b-away", name:"Away", tip:"Marked unavailable. No offers go out and no penalty builds up while she's away." }
+  };
+  var DEFAULT = { view:"console", sel:"mite", mode:"quiet", step:0, silent:0, attention:false, modal:null, picked:[],
+    toast:null, notifs:[], unread:0, log:[], phone:{ screen:"lock", ping:null, secs:60, banner:null }, nid:0 };
+  var S = clone(DEFAULT), timer = null;
+  function clone(o){ return JSON.parse(JSON.stringify(o)); }
+  function $(id){ return document.getElementById(id); }
+  function badge(m){ var b=STATUS[m]; return '<span class="badge tip '+b.cls+'" tabindex="0" data-tip="'+b.tip+'">'+b.name+'</span>'; }
+
+  /* ---------- events ---------- */
+  function logEv(t){ S.log.unshift({ t:t, at:S.log.length ? "now" : "now" }); S.log = S.log.slice(0,5); }
+  function notify(title, body, kind){
+    S.notifs.unshift({ id:++S.nid, title:title, body:body, kind:kind||"info" });
+    if (S.view !== "phone") S.unread++;
+  }
+  function sendPing(){
+    if (S.phone.ping) return;
+    S.phone.ping = { secs:60 }; S.phone.screen = "lock";
+    notify("New callout · structural-entry", "9 min away. Tap to see it. You have 60 seconds.", "ping");
+    clearInterval(timer);
+    timer = setInterval(function(){
+      if (!S.phone.ping) return clearInterval(timer);
+      S.phone.ping.secs--;
+      if (S.phone.ping.secs <= 0) answer("missed"); else if (S.view==="phone") paintPhone();
+    }, 1000);
+    render();
+  }
+  function answer(kind){
+    clearInterval(timer); S.phone.ping = null;
+    S.notifs = S.notifs.filter(function(n){ return n.kind !== "ping"; });
+    S.phone.screen = "home";
+    var msg;
+    if (kind === "taken") msg = "You took it. Your handler has been told.";
+    if (kind === "declined") msg = "Passed on. No problem, it's gone to the next responder.";
+    if (kind === "missed") msg = "That offer ran out and moved on to the next responder.";
+    S.phone.banner = msg;
+    if (S.mode === "easing") {
+      if (kind === "missed") {
+        S.silent++; logEv("Meteor Mite didn't answer an offer (" + S.silent + " in a row)");
+        if (S.silent >= MAX_SILENT) { S.attention = true; logEv("Offers paused: asking Kip whether she's still away"); }
+      } else {
+        S.silent = 0; S.step++;
+        logEv("Meteor Mite " + (kind === "taken" ? "took" : "turned down") + " an offer: step " + Math.min(S.step,STEPS) + " of " + STEPS);
+        if (S.step >= STEPS) {
+          S.mode = "active"; logEv("Easing back in complete: ranked like everyone else");
+          notify("You're back in the rotation", "You've answered every step. Offers will arrive as normal.");
+        }
+      }
+    } else {
+      logEv("Meteor Mite " + (kind === "missed" ? "didn't answer" : kind === "taken" ? "took" : "turned down") + " an offer");
+    }
+    S.toast = null;
+    render();
+  }
+  function act(a, el){
+    if (a === "openPick") S.modal = "pick";
+    else if (a === "openEase") S.modal = "ease";
+    else if (a === "openAway") S.modal = "away";
+    else if (a === "cancel") { S.modal = null; S.picked = []; }
+    else if (a === "doPick") {
+      S.modal = null; S.mode = "active"; S.attention = false; S.silent = 0;
+      logEv(S.picked.length + " missed offer" + (S.picked.length>1?"s":"") + " marked as not counting: ranking restored");
+      notify("Your ranking has been restored", "Kip marked your recent missed offers as not counting. Offers will arrive as normal.");
+      S.toast = "Ranking restored for Meteor Mite. She's been notified on her phone.";
+    }
+    else if (a === "doEase") {
+      S.modal = null; S.mode = "easing"; S.step = 0; S.silent = 0; S.attention = false;
+      logEv("Ease back in started: ranking reset to neutral");
+      notify("You're being eased back in", "Kip started a gradual return. You'll get a few offers at a time. Answering, even to say no, helps.");
+      S.toast = "Easing back in started. Meteor Mite has been notified; offers will go to her phone.";
+    }
+    else if (a === "doAway") {
+      S.modal = null; S.mode = "away"; S.attention = false;
+      logEv("Marked away: no offers will go out");
+      notify("You're marked away", "No offers will come until you're back. Ask Kip to ease you back in when you're ready.");
+      S.toast = "Meteor Mite is marked away. No offers, and no penalty while she's gone.";
+    }
+    else if (a === "keepTrying") { S.silent = 0; S.attention = false; logEv("Kip chose to keep trying"); }
+    else if (a === "dismissToast") S.toast = null;
+    render();
+  }
+
+  /* ---------- console ---------- */
+  function cmd(btnClass, label, action, desc, reason, enabled){
+    return '<div class="cmd"><div><button class="btn '+btnClass+'" data-act="'+action+'"'+(enabled?"":" disabled")+'>'+label+'</button></div>' +
+           '<p>'+desc+(enabled?"":'<em>'+reason+'</em>')+'</p></div>';
+  }
+  function consoleHTML(){
+    var m = S.mode, rows = "";
+    var miteP = { quiet:1, easing:S.step*2+1, active:12, away:0 }[m];
+    var miteR = { quiet:10, easing:30+S.step*15, active:82, away:10 }[m];
+    function row(id, name, role, mode, pings, rank, last){
+      return '<tr class="row'+(S.sel===id?" sel":"")+'" data-sel="'+id+'"><td><div class="nm">'+name+'<small>'+role+'</small></div></td><td>'+badge(mode)+'</td><td><b>'+pings+'</b></td><td><div class="rbar"><i style="width:'+rank+'%"></i></div></td><td class="meta">'+last+'</td></tr>';
+    }
+    rows += row("mite","Meteor Mite","structural-entry · cold-weather",m,miteP,miteR,m==="quiet"?"22 Aug":"Today");
+    rows += row("gale","The Gale","flight · aquatic","active",14,88,"Today");
+    var needs = (m==="quiet"||S.attention) ? 1 : 0;
+    var avail = m==="away" ? 1 : 2;
+    var h = '<div class="window"><div class="chrome"><i></i><i></i><i></i><span class="url">console.rook.example / coverage</span></div><div class="app">';
+    h += '<aside class="side"><div class="logo">'+ROOK+'<div>ROOK<small>Dispatch</small></div></div><nav class="nav">' +
+      '<a class="on"><span class="ic">◉</span>Coverage</a><a><span class="ic">☎</span>Callouts</a><a><span class="ic">☺</span>Responders</a><a><span class="ic">◷</span>Availability</a><a><span class="ic">☰</span>Audit log</a></nav>' +
+      '<div class="foot"><b>Kip</b>Handler · 2 responders<br>Site Aleph region</div></aside>';
+    h += '<section class="main">';
+    h += '<div class="topline"><div><h1>Coverage</h1><p>Your responders and who Dispatch is offering work to right now.</p></div><div class="me"><div class="avatar">K</div><div>Signed in as <b style="color:var(--ink)">Kip</b></div></div></div>';
+    if (S.toast) h += '<div class="toast"><span>'+S.toast+'</span><button data-act="dismissToast">Dismiss</button></div>';
+    h += '<div class="tiles"><div class="tile"><b>2</b><span>Your responders</span></div><div class="tile"><b>'+avail+'</b><span>Available for callouts</span></div><div class="tile'+(needs?" attn":"")+'"><b>'+needs+'</b><span>Need your attention</span></div></div>';
+    h += '<div class="grid"><div>';
+    h += '<div class="panel"><h3>Your responders <span style="text-transform:none;letter-spacing:0">Hover a status to see what it means</span></h3><table><thead><tr><th>Responder</th><th>Status</th><th>Pings this week</th><th>Ranking</th><th>Last ping</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    h += '<div class="panel" style="margin-top:16px"><h3>Status key</h3><div class="legend"><dl>';
+    ["active","quiet","easing","away"].forEach(function(k){ h += '<dt>'+badge(k)+'</dt><dd>'+STATUS[k].tip+'</dd>'; });
+    h += '</dl></div></div></div>';
+    h += '<div class="panel detail">' + detailHTML() + '</div></div></section>';
+    h += '</div>';
+    if (S.modal) h += modalHTML();
+    h += '</div>';
+    return h;
+  }
+  function detailHTML(){
+    var m = S.mode, h = "";
+    if (S.sel === "gale") {
+      h += '<div class="hd"><div><h2>The Gale</h2><div class="tags">flight · aquatic</div></div>'+badge("active")+'</div>';
+      h += '<div class="why g"><b>Offered work as normal.</b>A busy week: 14 pings, 13 taken. Nothing for you to do. Compare this card with Meteor Mite\'s: the gap between them is explained there.</div>';
+      h += '<div class="cmds"><h4>Commands</h4>' +
+        cmd("pri","Ease back in","x","Gradually bring a quiet responder back into the rotation.","Only for responders who have gone quiet.",false) +
+        cmd("","Those misses weren\'t real","x","Tell Dispatch certain missed offers shouldn\'t count against a responder.","There are no missed offers to review.",false) +
+        cmd("","Mark away","x","Mark a responder unavailable so no offers go out.","Try this on Meteor Mite in the prototype.",false) + '</div>';
+      return h;
+    }
+    h += '<div class="hd"><div><h2>Meteor Mite</h2><div class="tags">structural-entry · cold-weather</div></div>'+badge(m)+'</div>';
+    if (m==="quiet") h += '<div class="why o"><b>Pings are down about 90% from her usual.</b>Her ranking fell after 4 missed offers between 17 and 22 Aug. At this rank Dispatch rarely offers her work, so she can\'t earn it back on her own. Nothing is broken, and she isn\'t forgotten.</div>';
+    if (m==="easing") {
+      h += '<div class="why b"><b>Step '+Math.min(S.step+1,STEPS)+' of '+STEPS+': up to '+CAPS[Math.min(S.step,STEPS-1)]+' offers.</b>Her ranking was reset to neutral. She answers on her phone and this page updates. Any answer, even no, moves her forward; silence doesn\'t.</div>';
+      h += '<div class="steps" aria-label="Step '+S.step+' of '+STEPS+'">';
+      for (var i=1;i<=STEPS;i++) h += '<i class="'+(i<=S.step?"done":(i===S.step+1?"now":""))+'"></i>';
+      h += '</div><div class="meta">Unanswered in a row: '+S.silent+' of '+MAX_SILENT+'</div>';
+    }
+    if (m==="active") h += '<div class="why g"><b>Being offered work as normal.</b>Her ranking is back and offers are arriving.</div>';
+    if (m==="away") h += '<div class="why s"><b>Marked away.</b>No offers go out and no penalty builds up. When she\'s back, use Ease back in so she restarts gradually.</div>';
+    if (S.attention) h += '<div class="alert"><b>Is Meteor Mite still away?</b>She hasn\'t answered '+MAX_SILENT+' offers in a row, so offers are paused.<div style="display:flex;gap:8px;margin-top:10px"><button class="btn pri sm" data-act="openAway">Yes, mark her away</button><button class="btn sm" data-act="keepTrying">No, keep trying</button></div></div>';
+    h += '<div class="cmds"><h4>Commands</h4>';
+    h += cmd("pri","Ease back in","openEase","Reset her ranking to neutral and offer work a few pings at a time, widening as she answers. Use after a longer gap.","Available when she has gone quiet or is away.", m==="quiet"||m==="away");
+    h += cmd("","Those misses weren\'t real","openPick","Pick missed offers that were an emergency, travel, or a setting you forgot. They stop counting and her ranking returns to what it was.","Available only while she\'s quiet.", m==="quiet");
+    h += cmd("","Mark away","openAway","Mark her unavailable: no offers and no penalty while she\'s gone.","Already away.", m!=="away");
+    h += '</div>';
+    if (S.log.length) { h += '<div class="cmds"><h4>Recent activity</h4><ul class="log">'; S.log.forEach(function(e){ h += '<li><time>now</time><span>'+e.t+'</span></li>'; }); h += '</ul></div>'; }
+    return h;
+  }
+  function modalHTML(){
+    var h = '<div class="overlay"><div class="modal" role="dialog" aria-modal="true">';
+    if (S.modal==="pick") {
+      h += '<h3>Which misses shouldn\'t count?</h3><p>Tick the ones that were an emergency, travel, or a setting that wasn\'t updated. They stop counting against Meteor Mite and her ranking goes back to where it was before.</p><ul>';
+      MISSES.forEach(function(x){ h += '<li><label><input type="checkbox" data-miss="'+x.id+'"'+(S.picked.indexOf(x.id)>-1?" checked":"")+'> Missed offer · '+x.label+'</label></li>'; });
+      h += '</ul><div class="row"><button class="btn sm" data-act="cancel">Cancel</button><button class="btn pri sm" data-act="doPick"'+(S.picked.length?"":" disabled")+'>Restore her ranking</button></div>';
+    }
+    if (S.modal==="ease") {
+      h += '<h3>Ease Meteor Mite back in?</h3><p>Her ranking resets to neutral. She is then offered a few pings at a time, placed where a miss costs the least, and the number widens as she answers. Any answer, even "no", counts as a good sign.</p><p>If she goes silent three times in a row, offers pause and we ask whether she\'s still away. She is told on her phone what is happening.</p><div class="row"><button class="btn sm" data-act="cancel">Cancel</button><button class="btn pri sm" data-act="doEase">Start easing back in</button></div>';
+    }
+    if (S.modal==="away") {
+      h += '<h3>Mark Meteor Mite away?</h3><p>Dispatch will stop offering her work, and no penalty builds up while she\'s away. When she\'s back, use Ease back in.</p><div class="row"><button class="btn sm" data-act="cancel">Cancel</button><button class="btn pri sm" data-act="doAway">Mark away</button></div>';
+    }
+    return h + '</div></div>';
+  }
+
+  /* ---------- phone ---------- */
+  function phoneHTML(){
+    var can = S.phone.ping ? false : (S.mode==="active" || (S.mode==="easing" && !S.attention));
+    var why = S.mode==="quiet" ? "Dispatch isn't offering Meteor Mite pings right now. That is the problem this fixes. Use the console to ease her back in, then come back." :
+              S.mode==="away" ? "She's marked away, so no pings are sent." :
+              S.attention ? "Offers are paused until Kip answers the \"still away?\" question on the console." :
+              S.phone.ping ? "A ping is already on her phone." : "";
+    var h = '<div class="phoneview"><div class="ctl"><h2>Meteor Mite\'s iPhone</h2><p>This is a different person on a different device: the responder, in the Rook phone app. Kip never sees this screen.</p>';
+    h += '<div class="grp"><h4>Show on the phone</h4><div class="seg" style="background:#eceae2"><button class="'+(S.phone.screen==="lock"?"on":"")+'" data-ph="lock" style="color:#394057">Lock screen</button><button class="'+(S.phone.screen==="home"?"on":"")+'" data-ph="home" style="color:#394057">Rook app</button></div><p class="hint" style="margin-top:8px">Pushes arrive on the lock screen. Tapping one opens the app.</p></div>';
+    h += '<div class="grp"><h4>Try it</h4><button class="btn pri" data-ph="send"'+(can?"":" disabled")+'>Dispatch sends Mite a ping</button>';
+    h += '<button class="btn" data-ph="skip"'+(S.phone.ping?"":" disabled")+'>Skip ahead: let the 60 seconds run out</button>';
+    if (!can && why) h += '<p class="hint">'+why+'</p>';
+    h += '<p class="hint">A ping appears as a push on the lock screen. Tap it to open the accept or turn-down screen, then answer.</p></div></div>';
+    h += '<div class="iphone"><div class="island"></div><div class="screen '+(S.phone.screen==="lock"?"lock":(S.phone.screen==="ping"?"ping-s":""))+'" id="scr">'+phoneScreen()+'</div></div></div>';
+    return h;
+  }
+  function phoneScreen(){
+    var sc = S.phone.screen, h = '';
+    var sb = '<div class="sbar"><span>11:47</span><span class="r">●●● ▮</span></div>';
+    if (sc==="lock") {
+      h += sb + '<div class="clock"><div class="d">Thursday 3 September</div><div class="t">11:47</div></div><div class="notifs">';
+      if (!S.notifs.length) h += '<div class="nonotif">No notifications</div>';
+      S.notifs.forEach(function(n){
+        h += '<button class="notif'+(n.kind==="ping"?" ping":"")+'" data-n="'+n.id+'"><div class="ico">'+ROOK+'</div><div><b>'+n.title+'</b><span>'+n.body+'</span></div><time>now</time></button>';
+      });
+      h += '</div><div class="hint-lock">Tap a notification to open Rook</div><div class="homebar"></div>';
+    }
+    if (sc==="home") {
+      h += sb + '<div class="apphd"><div class="av"><div class="logo">'+ROOK+'<div>Rook</div></div><small>Meteor Mite</small></div></div><div class="appbody">';
+      if (S.phone.banner) h += '<div class="pbanner">'+S.phone.banner+'</div>';
+      h += '<div class="avail"><div><b>'+(S.mode==="away"?"You\'re away":"You\'re available")+'</b><div class="meta">'+(S.mode==="away"?"No callouts will be offered":"Callouts can be offered to you")+'</div></div><div class="sw'+(S.mode==="away"?" off":"")+'"></div></div>';
+      if (S.mode==="quiet") h += '<div class="scard o"><b>You haven\'t been offered much lately</b><p>Your ranking dropped after some missed offers in August. You haven\'t been forgotten. Your handler Kip can ease you back in.</p></div>';
+      if (S.mode==="easing") h += '<div class="scard b"><b>Easing you back in · step '+Math.min(S.step+1,STEPS)+' of '+STEPS+'</b><p>You\'ll get a few offers at a time. Answering, even to say no, helps.'+(S.attention?' Offers are paused while Kip checks in.':'')+'</p></div>';
+      if (S.mode==="active") h += '<div class="scard g"><b>You\'re in the rotation</b><p>Offers arrive as normal.</p></div>';
+      if (S.mode==="away") h += '<div class="scard s"><b>You\'re marked away</b><p>No offers will come. Ask Kip to ease you back in when you\'re ready.</p></div>';
+      h += '<div class="list"><div><span>Last callout</span><small>22 Aug</small></div><div><span>Offers this week</span><small>'+({quiet:1,easing:S.step*2+1,active:12,away:0}[S.mode])+'</small></div></div></div><div class="homebar"></div>';
+    }
+    if (sc==="ping") {
+      var s = S.phone.ping ? S.phone.ping.secs : 0;
+      h += sb + '<div class="ping-body"><div class="k">New callout</div><h2>Structural-entry</h2><div class="meta" style="color:#9aa5c7">Offered to you first</div>' +
+        '<div class="facts"><div class="fact"><span>Travel time</span><b>9 min</b></div><div class="fact"><span>Skills needed</span><b>structural-entry</b></div></div>' +
+        '<div class="ring" style="--deg:'+(s/60*360)+'deg"><div>'+s+'</div></div><div class="ring-l">seconds left to answer</div>' +
+        '<div class="pbtns"><button class="take" data-ph="take">Take it</button><button class="pass" data-ph="pass">Turn down</button><div class="note">If time runs out, it moves to the next responder.</div></div></div><div class="homebar"></div>';
+    }
+    return h;
+  }
+  function paintPhone(){ var s=$("scr"); if(s) { if (S.phone.screen==="ping") { s.innerHTML = phoneScreen(); bindPhone(); } } }
+
+  /* ---------- render + bind ---------- */
+  function render(){
+    var v = $("view");
+    $("tabConsole").className = S.view==="console"?"on":"";
+    $("tabPhone").className = S.view==="phone"?"on":"";
+    var dot = $("dot"); dot.textContent = S.unread; dot.classList.toggle("hidden", !S.unread || S.view==="phone");
+    if (S.view==="console") {
+      $("caption").innerHTML = "<b>Screen ①: the handler console.</b> This is what Kip sees on his laptop. Click Meteor Mite's row and try the commands. Her phone (②) updates when you do.";
+      v.innerHTML = consoleHTML();
+    } else {
+      $("caption").innerHTML = "<b>Screen ②: the responder's phone.</b> This is a separate device, Meteor Mite's iPhone. It never appears inside the console.";
+      v.innerHTML = phoneHTML();
+    }
+    bind();
+  }
+  function bind(){
+    var v = $("view");
+    v.querySelectorAll("[data-act]").forEach(function(b){ b.onclick=function(){ act(b.getAttribute("data-act")); }; });
+    v.querySelectorAll("[data-sel]").forEach(function(r){ r.onclick=function(){ S.sel=r.getAttribute("data-sel"); render(); }; });
+    v.querySelectorAll("[data-miss]").forEach(function(c){ c.onchange=function(){
+      var id=Number(c.getAttribute("data-miss")), i=S.picked.indexOf(id);
+      if(c.checked&&i<0) S.picked.push(id); if(!c.checked&&i>-1) S.picked.splice(i,1); render(); }; });
+    bindPhone();
+  }
+  function bindPhone(){
+    var v = $("view");
+    v.querySelectorAll("[data-ph]").forEach(function(b){ b.onclick=function(){
+      var k=b.getAttribute("data-ph");
+      if(k==="lock"||k==="home"){ S.phone.screen=k; S.phone.banner = k==="home"?S.phone.banner:null; render(); }
+      else if(k==="send") sendPing();
+      else if(k==="skip") answer("missed");
+      else if(k==="take") answer("taken");
+      else if(k==="pass") answer("declined");
+    }; });
+    v.querySelectorAll("[data-n]").forEach(function(n){ n.onclick=function(){
+      var id=Number(n.getAttribute("data-n")), note=S.notifs.filter(function(x){return x.id===id;})[0];
+      if(note && note.kind==="ping") S.phone.screen="ping"; else { S.phone.screen="home"; S.phone.banner=null; S.notifs=S.notifs.filter(function(x){return x.id!==id;}); }
+      render(); }; });
+  }
+  document.querySelectorAll(".seg [data-view]").forEach(function(b){ b.onclick=function(){
+    S.view=b.getAttribute("data-view"); if(S.view==="phone") S.unread=0; render(); window.scrollTo(0,0); }; });
+  $("reset").onclick = function(){ clearInterval(timer); S = clone(DEFAULT); render(); };
+  render();
+})();
+</script>
+</body>
+</html>
